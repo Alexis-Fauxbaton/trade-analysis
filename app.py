@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
-import MetaTrader5 as mt5
-import random
+# import random
 import numpy as np
 import plotly.graph_objects as go
 from st_utils import get_all_trades
