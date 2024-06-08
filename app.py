@@ -3,6 +3,8 @@ import pandas as pd
 # import random
 import numpy as np
 import plotly.graph_objects as go
+import plotly.figure_factory as ff
+from sklearn.mixture import GaussianMixture
 from st_utils import get_all_trades
 
 initial_balance = 100000
@@ -36,6 +38,47 @@ fig = go.Figure(data=[go.Scatter(x=(trades_agg['time'].dt.date if agg_period != 
 fig.add_trace(go.Scatter(x=(trades_agg['time'].dt.date if agg_period != 'Trade' else trades_agg['time']), y=-trades_agg['Commission'].cumsum(), mode='lines', name='Commission'))
 
 st.plotly_chart(fig, use_container_width=True)
+
+
+st.markdown('## Analyse des Profits')
+
+# répartition des profits plot kde (plot smoothed probability density of the profit)
+
+# create a distplot of profits (negative vs positive on the same graph)
+
+true_profits = trades['Profit'] + trades['Commission']
+
+# fig = ff.create_distplot([trades['Profit'] + trades['Commission']], group_labels=['True Profits'], bin_size=200)
+fig = ff.create_distplot([true_profits[true_profits > 0], true_profits[true_profits < 0]], group_labels=['Profit', 'Perte'], colors=['green', 'red'], bin_size=200)
+
+fig.update_layout(title='Distribution des profits', xaxis_title='Profit', yaxis_title='Densité')
+
+st.plotly_chart(fig, use_container_width=True)
+
+# create a gaussian mixture model of the profit distribution
+
+gmm = GaussianMixture(n_components=2)
+
+gmm.fit(true_profits.values.reshape(-1, 1))
+
+# display means and standard deviations of the two components in streamlit
+
+st.write(f"Mean 1: {gmm.means_[0][0]:.2f}, Mean 2: {gmm.means_[1][0]:.2f}")
+st.write(f"Standard Deviation 1: {np.sqrt(gmm.covariances_[0][0][0]):.2f}, Standard Deviation 2: {np.sqrt(gmm.covariances_[1][0][0]):.2f}")
+
+# sample from the gaussian mixture model and plot the distribution
+
+samples = gmm.sample(1000)
+
+fig = ff.create_distplot([samples[0].flatten()], group_labels=['Sampled Profits'], bin_size=200)
+
+fig.update_layout(title='Distribution des profits échantillonnés', xaxis_title='Profit', yaxis_title='Densité')
+
+st.plotly_chart(fig, use_container_width=True)
+
+# st.plotly_chart(fig, use_container_width=True)
+
+st.markdown('## Simulation de Monte Carlo')
 
 monte_carlo = st.toggle('Monte Carlo Simulation')
 
