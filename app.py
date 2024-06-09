@@ -185,4 +185,4 @@ if monte_carlo:
     col1, col2 = st.columns(2)
     
     col1.metric('Risque de ruine', f'{risk_of_ruin:.2%}')
-    col2.metric('Chance d\'atteinte de succès cible', f'{chance_of_success:.2%}')
+    col2.metric('Probabilité d\'atteindre l\'objectif de profit', f'{chance_of_success:.2%}')
