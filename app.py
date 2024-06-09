@@ -82,7 +82,7 @@ st.markdown('## Simulation de Monte Carlo')
 
 monte_carlo = st.toggle('Monte Carlo Simulation')
 
-def monte_carlo_simulation(trades, n=1000, horizon=100, threshold=0.9*initial_balance):
+def monte_carlo_simulation(trades, n=1000, horizon=100, threshold=0.9*initial_balance, use_gmm=False):
 
     true_profits = trades['Profit'] + trades['Commission']
     
@@ -96,12 +96,19 @@ def monte_carlo_simulation(trades, n=1000, horizon=100, threshold=0.9*initial_ba
     
     for i in range(n):
         # simulate the profit for the next horizon trades and truncate the cumsum if the profit goes below the threshold
-        simulated_profits = np.random.normal(mean, std, horizon)
+        simulated_profits = np.random.normal(mean, std, horizon) if not use_gmm else gmm.sample(horizon)[0].flatten()
+        if use_gmm:
+            np.random.shuffle(simulated_profits)
         simulated_profits_raw = simulated_profits
         simulated_profits = np.minimum(np.cumsum(simulated_profits), threshold)
         
         results.append(simulated_profits)
         results_raw.append(simulated_profits_raw)
+    
+    fig = ff.create_distplot([simulated_profits_raw], group_labels=['Final Profits'], bin_size=200)
+    fig.update_layout(title='Distribution des profits finaux simulés', xaxis_title='Profit', yaxis_title='Densité')
+    
+    st.plotly_chart(fig, use_container_width=True)
     
     results_matrix = np.array(results)
     results_matrix_raw = np.array(results_raw)
@@ -124,9 +131,11 @@ if monte_carlo:
     n = st.number_input('Nombre de simulations', min_value=1, max_value=1000000, value=1000)
     horizon = st.number_input('Horizon de simulation', min_value=1, max_value=1000, value=100)
     threshold = st.number_input('Seuil de perte', min_value=0, max_value=initial_balance, value=int(0.9*initial_balance))
+    target = st.number_input('Objectif de profit', min_value=0, value=int(1.1*initial_balance))
+    use_gmm = st.toggle('Utiliser un modèle de mélange gaussien pour simuler les profits')
 
     with st.spinner('Simulation en cours...'):
-        final_results, results_matrix, results_matrix_raw, bins_matrix = monte_carlo_simulation(trades, n, horizon, threshold)
+        final_results, results_matrix, results_matrix_raw, bins_matrix = monte_carlo_simulation(trades, n, horizon, threshold, use_gmm)
     
     # treat raw results as the continuation of the profit trajectory, create new matrix with previous results
     # copy previous results n times and concatenate with the new results
@@ -135,8 +144,8 @@ if monte_carlo:
     
     results_matrix_raw = np.concatenate((previous_results_matrix_raw, results_matrix_raw), axis=1)
     
-    print(results_matrix_raw.shape)
-    print(results_matrix_raw[0, :])
+    # print(results_matrix_raw.shape)
+    # print(results_matrix_raw[0, :])
     
     
     results_matrix_raw = np.cumsum(results_matrix_raw, axis=1) + initial_balance
@@ -168,4 +177,12 @@ if monte_carlo:
     # st metric the risk of ruin (proportion of simulations that go below the threshold at at least one point)
     risk_of_ruin = np.mean([np.any(result < threshold) for result in results_matrix_raw])
     
-    st.metric('Risque de ruine', f'{risk_of_ruin:.2%}')    
+    # chance_of_success = np.mean([np.any(result > target) for result in results_matrix_raw])
+    
+    # chance of success without hitting the threshold before
+    chance_of_success = np.mean([np.all(result > threshold) and np.any(result > target) for result in results_matrix_raw])
+    
+    col1, col2 = st.columns(2)
+    
+    col1.metric('Risque de ruine', f'{risk_of_ruin:.2%}')
+    col2.metric('Chance d\'atteinte de succès cible', f'{chance_of_success:.2%}')
