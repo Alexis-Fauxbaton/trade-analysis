@@ -175,14 +175,19 @@ if monte_carlo:
     st.plotly_chart(fig, use_container_width=True)
     
     # st metric the risk of ruin (proportion of simulations that go below the threshold at at least one point)
-    risk_of_ruin = np.mean([np.any(result < threshold) for result in results_matrix_raw])
+    risk_of_ruin = np.mean([np.any(result < threshold) for result in results_matrix_raw[:, trades.shape[0]:]])
     
-    # chance_of_success = np.mean([np.any(result > target) for result in results_matrix_raw])
+    chance_of_success = np.mean([np.any(result > target) for result in results_matrix_raw]) # even if hitting the threshold
     
     # chance of success without hitting the threshold before
-    chance_of_success = np.mean([np.all(result > threshold) and np.any(result > target) for result in results_matrix_raw])
+    chance_of_success_without_threshold = np.mean([np.all(result > threshold) and np.any(result > target) for result in results_matrix_raw[:, trades.shape[0]:]])
     
-    col1, col2 = st.columns(2)
+    print(results_matrix_raw, results_matrix_raw.shape)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    print(risk_of_ruin, chance_of_success)
     
     col1.metric('Risque de ruine', f'{risk_of_ruin:.2%}')
-    col2.metric('Probabilité d\'atteindre l\'objectif de profit', f'{chance_of_success:.2%}')
+    col2.metric('Probabilité d\'atteindre l\'objectif de profit (même si seuil limite touché)', f'{chance_of_success:.2%}')
+    col3.metric('Probabilité d\'atteindre l\'objectif de profit (sans toucher le seuil limite)', f'{chance_of_success_without_threshold:.2%}')
