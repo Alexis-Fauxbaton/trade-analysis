@@ -2,7 +2,7 @@
 import pandas as pd
 from datetime import datetime
 
-def get_all_trades():
+def get_all_trades(path='./data/11083245-trading-data.csv'):
     # Récupérer les trades
     try:
         # trades = mt5.history_orders_get(date_from=datetime(2024, 1, 27), date_to=datetime.now())
@@ -16,6 +16,6 @@ def get_all_trades():
         # df['time'] = pd.to_datetime(df['time'], unit='s')
         raise Exception('Not implemented')
     except Exception as e:
-        df = pd.read_csv('./data/11083245-trading-data.csv')
+        df = pd.read_csv(path)
         df.rename({'Open Time': 'time'}, inplace=True, axis=1)
     return df

@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from pandas.tseries.offsets import MonthEnd
 # import random
 import numpy as np
 import plotly.graph_objects as go
@@ -11,11 +12,17 @@ initial_balance = 100000
 
 st.set_page_config(layout='wide')
 
+random_seed = st.number_input('Graine aléatoire', min_value=0, max_value=1000000, value=42)
+
+np.random.seed(random_seed)
+
 st.markdown('## Analyse des Trades')
 
 agg_period = st.sidebar.radio('Période d\'aggrégation', ['Trade', 'Jour', 'Semaine', 'Mois'])
 
-trades = get_all_trades().sort_index(ascending=False)
+trades = get_all_trades('./data/11154302-trading-data.csv').sort_index(ascending=False).query("Symbol == 'EURUSD'")
+
+reference_trades = pd.concat([trades, get_all_trades()]).sort_index(ascending=False)
 
 def aggregate_trades(trades, period):
     if period == 'Trade':
@@ -28,34 +35,46 @@ def aggregate_trades(trades, period):
         return trades.groupby(pd.to_datetime(trades['time']).dt.to_period('M')).agg({'Profit': 'sum', 'Commission': 'sum'}).reset_index()
 
 trades_agg = aggregate_trades(trades, agg_period)
+time_offsets = {'Trades': pd.Timedelta(days=-1), 'Jour': pd.Timedelta(days=-1), 'Semaine': pd.Timedelta(weeks=-1), 'Mois': MonthEnd(-1)}
+min_date = trades_agg['time'].min() + time_offsets.get(agg_period, pd.Timedelta(days=-1))
+new_row = pd.DataFrame([{'Profit': 0, 'Commission': 0, 'time': min_date}])
+trades_agg = pd.concat([trades_agg, new_row], ignore_index=True).sort_values('time').reset_index(drop=True)
+# print(trades_agg)
 
-#aggregate trades by day
-# trades_by_day = trades.groupby(pd.to_datetime(trades['time']).dt.date).agg({'Profit': 'sum', 'Commission': 'sum'}).reset_index()
+reference_trades_agg = aggregate_trades(reference_trades, agg_period)
+min_date = reference_trades_agg['time'].min() + time_offsets.get(agg_period, pd.Timedelta(days=-1))
+new_row = pd.DataFrame([{'Profit': 0, 'Commission': 0, 'time': min_date}])
+reference_trades_agg = pd.concat([reference_trades_agg, new_row], ignore_index=True).sort_values('time').reset_index(drop=True)
+print(reference_trades_agg)
+
 
 trades_agg['time'] = pd.to_datetime(trades_agg['time'])
 
-fig = go.Figure(data=[go.Scatter(x=(trades_agg['time'].dt.date if agg_period != 'Trade' else trades_agg['time']), y=trades_agg['Profit'].cumsum(), mode='lines', name='Profit'),])
-fig.add_trace(go.Scatter(x=(trades_agg['time'].dt.date if agg_period != 'Trade' else trades_agg['time']), y=-trades_agg['Commission'].cumsum(), mode='lines', name='Commission'))
+true_profits_toggle = st.toggle('Combiner Profits et commissions', False)
 
+if not true_profits_toggle:
+    fig = go.Figure(data=[go.Scatter(x=(trades_agg['time'].dt.date if agg_period != 'Trade' else trades_agg['time']), y=trades_agg['Profit'].cumsum(), mode='lines', name='Profit'),])
+    fig.add_trace(go.Scatter(x=(trades_agg['time'].dt.date if agg_period != 'Trade' else trades_agg['time']), y=-trades_agg['Commission'].cumsum(), mode='lines', name='Commission'))
+else:
+    fig = go.Figure(data=[go.Scatter(x=(trades_agg['time'].dt.date if agg_period != 'Trade' else trades_agg['time']), y=(trades_agg['Profit'] + trades_agg['Commission']).cumsum(), mode='lines', name='Profit')])
 st.plotly_chart(fig, use_container_width=True)
 
 
 st.markdown('## Analyse des Profits')
 
-# répartition des profits plot kde (plot smoothed probability density of the profit)
+use_all_trades = st.toggle('Utiliser la totalité de l\'historique des trades', False)
 
-# create a distplot of profits (negative vs positive on the same graph)
+if use_all_trades:
+    true_profits = reference_trades['Profit'] + reference_trades['Commission']
+else:
+    true_profits = trades['Profit'] + trades['Commission']
 
-true_profits = trades['Profit'] + trades['Commission']
-
-# fig = ff.create_distplot([trades['Profit'] + trades['Commission']], group_labels=['True Profits'], bin_size=200)
 fig = ff.create_distplot([true_profits[true_profits > 0], true_profits[true_profits < 0]], group_labels=['Profit', 'Perte'], colors=['green', 'red'], bin_size=200)
 
 fig.update_layout(title='Distribution des profits', xaxis_title='Profit', yaxis_title='Densité')
 
 st.plotly_chart(fig, use_container_width=True)
 
-# create a gaussian mixture model of the profit distribution
 
 gmm = GaussianMixture(n_components=2)
 
@@ -191,3 +210,17 @@ if monte_carlo:
     col1.metric('Risque de ruine', f'{risk_of_ruin:.2%}')
     col2.metric('Probabilité d\'atteindre l\'objectif de profit (même si seuil limite touché)', f'{chance_of_success:.2%}')
     col3.metric('Probabilité d\'atteindre l\'objectif de profit (sans toucher le seuil limite)', f'{chance_of_success_without_threshold:.2%}')
+    
+    # plot histogram of final results
+    bin_size = st.number_input('Taille des bins', min_value=1, value=int(0.03 * initial_balance))
+    fig = ff.create_distplot([final_results], group_labels=['Final Profits'], bin_size=bin_size)
+    fig.update_layout(title='Distribution des profits finaux simulés', xaxis_title='Profit', yaxis_title='Densité')
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # calculate probability of being between two final profit levels
+    lower_bound = st.number_input('Seuil inférieur de balance', min_value=0, value=int(0.9*initial_balance))
+    upper_bound = st.number_input('Seuil supérieur de balance', min_value=0, value=int(1.1*initial_balance))
+    
+    probability = np.mean([lower_bound - initial_balance < result < upper_bound - initial_balance for result in final_results])
+    
+    st.metric(f'Probabilité d\'être entre les niveaux de balance {lower_bound} et {upper_bound}', f'{probability:.2%}')
