@@ -45,7 +45,7 @@ reference_trades_agg = aggregate_trades(reference_trades, agg_period)
 min_date = reference_trades_agg['time'].min() + time_offsets.get(agg_period, pd.Timedelta(days=-1))
 new_row = pd.DataFrame([{'Profit': 0, 'Commission': 0, 'time': min_date}])
 reference_trades_agg = pd.concat([reference_trades_agg, new_row], ignore_index=True).sort_values('time').reset_index(drop=True)
-print(reference_trades_agg)
+# print(reference_trades_agg)
 
 
 trades_agg['time'] = pd.to_datetime(trades_agg['time'])
@@ -76,9 +76,13 @@ fig.update_layout(title='Distribution des profits', xaxis_title='Profit', yaxis_
 st.plotly_chart(fig, use_container_width=True)
 
 
-gmm = GaussianMixture(n_components=2)
+gmm_all_trades = GaussianMixture(n_components=2)
+gmm_all_trades.fit((reference_trades['Profit'] + reference_trades['Commission']).values.reshape(-1, 1))
 
-gmm.fit(true_profits.values.reshape(-1, 1))
+gmm_current_trades = GaussianMixture(n_components=2)
+gmm_current_trades.fit((trades['Profit'] + trades['Commission']).values.reshape(-1, 1))
+
+gmm = gmm_all_trades if use_all_trades else gmm_current_trades
 
 # display means and standard deviations of the two components in streamlit
 
@@ -101,7 +105,7 @@ st.markdown('## Simulation de Monte Carlo')
 
 monte_carlo = st.toggle('Monte Carlo Simulation')
 
-def monte_carlo_simulation(trades, n=1000, horizon=100, threshold=0.9*initial_balance, use_gmm=False):
+def monte_carlo_simulation(trades, n=1000, horizon=100, threshold=0.9*initial_balance, use_gmm=False, use_all_trades=False):
 
     true_profits = trades['Profit'] + trades['Commission']
     
@@ -112,6 +116,8 @@ def monte_carlo_simulation(trades, n=1000, horizon=100, threshold=0.9*initial_ba
     
     results = []
     results_raw = []
+    
+    gmm = gmm_all_trades if use_all_trades else gmm_current_trades
     
     for i in range(n):
         # simulate the profit for the next horizon trades and truncate the cumsum if the profit goes below the threshold
@@ -151,13 +157,11 @@ if monte_carlo:
     horizon = st.number_input('Horizon de simulation', min_value=1, max_value=1000, value=100)
     threshold = st.number_input('Seuil de perte', min_value=0, max_value=initial_balance, value=int(0.9*initial_balance))
     target = st.number_input('Objectif de profit', min_value=0, value=int(1.1*initial_balance))
+    use_all_trades = st.toggle('Utiliser la totalité de l\'historique des trades comme référence', False)
     use_gmm = st.toggle('Utiliser un modèle de mélange gaussien pour simuler les profits')
 
     with st.spinner('Simulation en cours...'):
-        final_results, results_matrix, results_matrix_raw, bins_matrix = monte_carlo_simulation(trades, n, horizon, threshold, use_gmm)
-    
-    # treat raw results as the continuation of the profit trajectory, create new matrix with previous results
-    # copy previous results n times and concatenate with the new results
+        final_results, results_matrix, results_matrix_raw, bins_matrix = monte_carlo_simulation(reference_trades if use_all_trades else trades, n, horizon, threshold, use_gmm, use_all_trades)
     
     previous_results_matrix_raw = np.tile(trades['Profit'] + trades['Commission'], (n, 1))
     
@@ -201,11 +205,11 @@ if monte_carlo:
     # chance of success without hitting the threshold before
     chance_of_success_without_threshold = np.mean([np.all(result > threshold) and np.any(result > target) for result in results_matrix_raw[:, trades.shape[0]:]])
     
-    print(results_matrix_raw, results_matrix_raw.shape)
+    # print(results_matrix_raw, results_matrix_raw.shape)
     
     col1, col2, col3 = st.columns(3)
     
-    print(risk_of_ruin, chance_of_success)
+    # print(risk_of_ruin, chance_of_success)
     
     col1.metric('Risque de ruine', f'{risk_of_ruin:.2%}')
     col2.metric('Probabilité d\'atteindre l\'objectif de profit (même si seuil limite touché)', f'{chance_of_success:.2%}')
