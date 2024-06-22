@@ -26,6 +26,7 @@ reference_trades = pd.concat([trades, get_all_trades()]).sort_index(ascending=Fa
 
 def aggregate_trades(trades, period):
     if period == 'Trade':
+        trades['time'] = pd.to_datetime(trades['time'])
         return trades
     elif period == 'Jour':
         return trades.groupby(pd.to_datetime(trades['time']).dt.date).agg({'Profit': 'sum', 'Commission': 'sum'}).reset_index()
