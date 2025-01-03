@@ -7,9 +7,9 @@ class MT5Manager:
         self.connected = False
         self.connected = self.connect()
 
-    def connect(self):
+    def connect(self, **kwargs):
         if not self.connected:
-            self.connected = mt5.initialize()
+            self.connected = mt5.initialize(**kwargs)
             return self.connected
         return True
 
@@ -70,3 +70,9 @@ class MT5Manager:
         df['time'] = pd.to_datetime(df['time'], unit='s')
         
         return df
+    
+    def reconnect(self, **kwargs):
+        self.disconnect()
+        # connect using the new parameters
+        self.connected = self.connect(**kwargs)
+        return self.connected

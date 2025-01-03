@@ -84,14 +84,15 @@ if not st.session_state.logged_in:
     if st.button("Login"):
         try:
             print(int(login), password, server)
-            logged_in = mt5_manager.login(int(login), password, server)
+            logged_in = mt5_manager.reconnect(login=int(login), password=password, server=server)
+            # logged_in = mt5_manager.login(account=int(login), password=password, server=server)
             if logged_in:
                 st.success("Login successful!")
                 st.session_state.logged_in = True
                 st.session_state.mt5_manager = mt5_manager
                 st.rerun()  # Refresh the app to continue execution
             else:
-                st.error("Invalid login credentials. Please try again.")
+                st.error(f"Invalid login credentials. Please try again. Last error: {mt5_manager.get_last_error()}")
         except Exception as e:
             st.error(f"An error occurred: {e}")
 
@@ -106,12 +107,12 @@ trades = mt5_manager.get_all_trades_since_to(date_from=datetime(2024, 12, 1), da
 
 
 # display key metrics
-metric_tabs = st.columns(2)
-
 st.title("Key Metrics")
+
+metric_tabs = st.columns(2)
 sharpe = sharpe_ratio(trades[trades['order'] != 0])
 metric_tabs[0].metric(label="Sharpe Ratio", value=f"{sharpe:.2f}", delta=f"{(sharpe-1):.2f}", delta_color="normal")
-win_rate = (trades['profit'] > 0).mean()
+win_rate = (trades[trades['order'] != 0]['profit'] > 0).mean()
 metric_tabs[1].metric(label="Win Rate", value=f"{win_rate:.2%}", delta=f"{win_rate-0.33:.2%}", delta_color="normal")
 
 # list of other metrics to display
@@ -173,29 +174,27 @@ else:
     )
     st.plotly_chart(fig, use_container_width=True)
     # st.bar_chart(aggregated_pnl, use_container_width=True)
-    
-
-st.title("Win Rate Evolution")
-
 
 st.title("Win Rate Breakdown")
 # breakdown of win rate by day of the week, hour of the day, month of the year, etc.
 
 def get_win_rate_breakdown(trades, by="Day"):
     trades = trades.copy()
-    if by == "Day":
-        trades['time'] = trades['time'].dt.day_name()
-    elif by == "Hour":
+    if by == "Hour":
         trades['time'] = trades['time'].dt.hour
+    elif by == "Day":
+        trades['time'] = trades['time'].dt.day_name()
+    elif by == "Week":
+        trades['time'] = trades['time'].dt.to_period('W').apply(lambda r: r.start_time)
     elif by == "Month":
         trades['time'] = trades['time'].dt.month_name()
     elif by == "Year":
         trades['time'] = trades['time'].dt.year
     win_rate_breakdown = trades.groupby('time')['profit'].apply(lambda x: (x > 0).mean())
-    win_rate_breakdown *= 100
+    # win_rate_breakdown *= 100
     return win_rate_breakdown
 
-win_rate_breakdown_by = st.selectbox("Breakdown by", ["Day", "Hour", "Month", "Year"], index=0)
+win_rate_breakdown_by = st.selectbox("Breakdown by", ["Hour", "Day", "Week", "Month", "Year"], index=1)
 
 win_rate_breakdown = get_win_rate_breakdown(trades[trades['order'] != 0], win_rate_breakdown_by)
 
@@ -223,7 +222,7 @@ fig.update_layout(
     ),
     yaxis=dict(
         title="Win Rate (%)",
-        tickvals=[i*10 for i in range(11)],
+        tickformat=".0%"
     )
 )
 
